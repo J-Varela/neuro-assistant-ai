@@ -26,7 +26,16 @@ export default function App() {
   const [breakdownResult, setBreakdownResult] = useState(null);
   const [simplifyResult, setSimplifyResult] = useState(null);
   const [focusStep, setFocusStep] = useState("");
-  const [history, setHistory] = useState([]);
+  const [focusDuration, setFocusDuration] = useState(25);
+  const [focusSupportivePrompt, setFocusSupportivePrompt] = useState("");
+  const [history, setHistory] = useState(() => {
+    try {
+      const stored = localStorage.getItem("neuro-history");
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [darkMode, setDarkMode] = useState(false);
@@ -34,6 +43,10 @@ export default function App() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
+
+  useEffect(() => {
+    localStorage.setItem("neuro-history", JSON.stringify(history));
+  }, [history]);
 
   const addToHistory = (type, input, output) => {
     const entry = {
@@ -46,6 +59,22 @@ export default function App() {
     };
 
     setHistory((prev) => [entry, ...prev.slice(0, 5)]);
+  };
+
+  const handleSendToFocus = (step) => {
+    setFocusStep(step);
+    api
+      .post("/generate-focus-session", {
+        step_text: step,
+        support_mode: supportMode,
+      })
+      .then((res) => {
+        setFocusDuration(res.data.duration_minutes);
+        setFocusSupportivePrompt(res.data.supportive_prompt);
+      })
+      .catch(() => {
+        setFocusSupportivePrompt("Focus on just this step. You can do this.");
+      });
   };
 
   const handleGenerate = async () => {
@@ -64,7 +93,7 @@ export default function App() {
         });
 
         setBreakdownResult(response.data);
-        setFocusStep(response.data.next_step);
+        handleSendToFocus(response.data.next_step);
         addToHistory("Task Breakdown", inputText, response.data);
       } else {
         const response = await api.post("/simplify-text", {
@@ -77,7 +106,13 @@ export default function App() {
       }
     } catch (err) {
       console.error(err);
-      setError("Something went wrong while generating the response. Please try again.");
+      if (err.response?.status === 422) {
+        setError("Invalid input. Please check your text and try again.");
+      } else if (err.response?.status >= 500) {
+        setError("The AI service is temporarily unavailable. Please try again later.");
+      } else {
+        setError("Something went wrong. Please check your connection and try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -92,7 +127,7 @@ export default function App() {
       setActiveTab("breakdown");
       setBreakdownResult(item.output);
       setSimplifyResult(null);
-      setFocusStep(item.output.next_step);
+      handleSendToFocus(item.output.next_step);
       return;
     }
 
@@ -106,6 +141,8 @@ export default function App() {
     setBreakdownResult(null);
     setSimplifyResult(null);
     setFocusStep("");
+    setFocusDuration(25);
+    setFocusSupportivePrompt("");
     setError("");
   };
 
@@ -169,8 +206,10 @@ export default function App() {
 
           <div className="space-y-6">
             <FocusTimer
-              minutes={15}
-              stepText={focusStep || "Generate a breakdown to send the next step here."}
+              minutes={focusDuration}
+              stepText={focusStep}
+              supportivePrompt={focusSupportivePrompt}
+              placeholder="Generate a breakdown to send the next step here."
             />
 
             <aside className="panel p-5">
@@ -231,8 +270,8 @@ export default function App() {
                     <p className="result-text">{breakdownResult.next_step}</p>
                   </div>
                   <button
-                    onClick={() => setFocusStep(breakdownResult.next_step)}
-                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
+                    onClick={() => handleSendToFocus(breakdownResult.next_step)}
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:border-slate-900 hover:bg-slate-900 hover:text-white active:scale-95 dark:border-slate-600 dark:text-slate-200 dark:hover:border-slate-100 dark:hover:bg-slate-100 dark:hover:text-slate-900"
                   >
                     Send to Focus
                   </button>
@@ -255,10 +294,14 @@ export default function App() {
                       </div>
 
                       <button
-                        onClick={() => setFocusStep(step)}
-                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
+                        onClick={() => handleSendToFocus(step)}
+                        className={`shrink-0 rounded-lg border px-4 py-2 text-sm font-medium transition-all active:scale-95 ${
+                          focusStep === step
+                            ? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
+                            : "border-slate-300 text-slate-700 hover:border-slate-900 hover:bg-slate-900 hover:text-white dark:border-slate-600 dark:text-slate-200 dark:hover:border-slate-100 dark:hover:bg-slate-100 dark:hover:text-slate-900"
+                        }`}
                       >
-                        Focus
+                        {focusStep === step ? "Focused" : "Focus"}
                       </button>
                     </div>
                   ))}
