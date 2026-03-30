@@ -1,96 +1,103 @@
 import { useEffect, useState } from "react";
 
+const RADIUS = 48;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
 export default function FocusTimer({ minutes = 15, stepText }) {
   const initialSeconds = minutes * 60;
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
   const [isRunning, setIsRunning] = useState(false);
-  const [completed, setCompleted] = useState(false);
-
-  useEffect(() => {
-    setSecondsLeft(initialSeconds);
-    setIsRunning(false);
-    setCompleted(false);
-  }, [initialSeconds]);
 
   useEffect(() => {
     if (!isRunning) return;
 
     const interval = setInterval(() => {
-      setSecondsLeft((prev) => (prev <= 1 ? 0 : prev - 1));
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          setIsRunning(false);
+          return 0;
+        }
+
+        return prev - 1;
+      });
     }, 1000);
 
     return () => clearInterval(interval);
   }, [isRunning]);
 
-  useEffect(() => {
-    if (secondsLeft === 0) {
-      setIsRunning(false);
-      setCompleted(true);
-    }
-  }, [secondsLeft]);
-
+  const completed = secondsLeft === 0;
   const mins = Math.floor(secondsLeft / 60);
   const secs = secondsLeft % 60;
+  const dashOffset = CIRCUMFERENCE * (1 - secondsLeft / initialSeconds);
 
   return (
-    <div className="rounded-3xl bg-slate-900 p-6 text-white shadow-sm">
+    <section className="panel p-5">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-xl font-semibold">Focus Session</h3>
-        <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
-          {minutes} min
-        </span>
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Focus Timer</h2>
+        <span className="text-sm text-slate-500 dark:text-slate-400">{minutes} min</span>
       </div>
 
-      <div className="mt-5 rounded-2xl bg-slate-800 p-4">
-        <p className="text-sm text-slate-400">Current Step</p>
-        <p className="mt-2 leading-7 text-slate-100">
-          {stepText || "No step selected yet."}
-        </p>
-      </div>
-
-      <div className="mt-6 text-center text-5xl font-bold tracking-tight">
-        {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
-      </div>
-
-      <p className="mt-4 text-center text-sm text-slate-300">
-        Focus on one step only. You do not need to finish everything at once.
+      <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
+        {stepText || "No step selected yet."}
       </p>
 
-      <div className="mt-6 flex flex-wrap justify-center gap-3">
-        <button
-          type="button"
-          onClick={() => setIsRunning(true)}
-          disabled={isRunning || completed}
-          className="rounded-xl bg-white px-4 py-2 font-medium text-slate-900 disabled:opacity-40"
-        >
-          Start
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsRunning(false)}
-          disabled={!isRunning}
-          className="rounded-xl border border-slate-600 px-4 py-2 font-medium text-white disabled:opacity-40"
-        >
-          Pause
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setIsRunning(false);
-            setSecondsLeft(initialSeconds);
-            setCompleted(false);
-          }}
-          className="rounded-xl border border-slate-600 px-4 py-2 font-medium text-white"
-        >
-          Reset
-        </button>
-      </div>
-
-      {completed && (
-        <div className="mt-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-          Focus session complete. Nice work.
+      <div className="mt-5 flex flex-col items-center rounded-xl border border-slate-200 px-4 py-5 dark:border-slate-800">
+        <div className="relative flex items-center justify-center">
+          <svg width="140" height="140" viewBox="0 0 120 120" className="-rotate-90">
+            <circle cx="60" cy="60" r={RADIUS} fill="none" className="ring-track" strokeWidth="8" />
+            <circle
+              cx="60"
+              cy="60"
+              r={RADIUS}
+              fill="none"
+              className="ring-fill"
+              strokeWidth="8"
+              strokeLinecap="round"
+              strokeDasharray={CIRCUMFERENCE}
+              strokeDashoffset={dashOffset}
+              style={{ transition: "stroke-dashoffset 1s linear" }}
+            />
+          </svg>
+          <div className="absolute text-center">
+            <div className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+              {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
+            </div>
+          </div>
         </div>
-      )}
-    </div>
+
+        <div className="mt-5 flex w-full flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsRunning(true)}
+            disabled={isRunning || completed}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
+          >
+            Start
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsRunning(false)}
+            disabled={!isRunning}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
+          >
+            Pause
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsRunning(false);
+              setSecondsLeft(initialSeconds);
+            }}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
+          >
+            Reset
+          </button>
+        </div>
+
+        {completed ? (
+          <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">Session complete.</p>
+        ) : null}
+      </div>
+    </section>
   );
 }

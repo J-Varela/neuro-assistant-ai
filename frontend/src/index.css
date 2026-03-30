@@ -1,7 +1,30 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@theme {
+  --animate-fadeInUp: fadeInUp 0.25s ease-out both;
+}
+
 :root {
-  font-family: Inter, system-ui, sans-serif;
+  color-scheme: light;
+  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 body {
@@ -10,4 +33,130 @@ body {
   min-height: 100vh;
   background: #f8fafc;
   color: #0f172a;
+}
+
+html.dark body {
+  background: #020617;
+  color: #e2e8f0;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+.ui-title {
+  color: #0f172a;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+html.dark .ui-title {
+  color: #f8fafc;
+}
+
+.ui-subtle {
+  color: #475569;
+}
+
+html.dark .ui-subtle {
+  color: #94a3b8;
+}
+
+.panel {
+  border-radius: 1rem;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+html.dark .panel {
+  border-color: #1e293b;
+  background: #0f172a;
+}
+
+.tab-button {
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 0.625rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #334155;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.tab-button:hover {
+  background: #f1f5f9;
+}
+
+html.dark .tab-button {
+  border-color: #1e293b;
+  background: #0b1220;
+  color: #cbd5e1;
+}
+
+html.dark .tab-button:hover {
+  background: #111827;
+}
+
+.tab-button-active {
+  border-color: #0f172a;
+  background: #0f172a;
+  color: #ffffff;
+}
+
+html.dark .tab-button-active {
+  border-color: #e2e8f0;
+  background: #e2e8f0;
+  color: #020617;
+}
+
+.result-block {
+  border-radius: 0.9rem;
+  border: 1px solid #e2e8f0;
+  padding: 1rem;
+}
+
+html.dark .result-block {
+  border-color: #1e293b;
+}
+
+.result-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+html.dark .result-label {
+  color: #94a3b8;
+}
+
+.result-text {
+  margin-top: 0.5rem;
+  font-size: 0.95rem;
+  line-height: 1.75;
+  color: #1e293b;
+}
+
+html.dark .result-text {
+  color: #e2e8f0;
+}
+
+.ring-track {
+  stroke: #e2e8f0;
+}
+
+.ring-fill {
+  stroke: #0f172a;
+}
+
+html.dark .ring-track {
+  stroke: #334155;
+}
+
+html.dark .ring-fill {
+  stroke: #e2e8f0;
 }

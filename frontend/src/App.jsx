@@ -1,10 +1,23 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import api from "./api/client";
 import Header from "./components/Header";
 import SupportModeSelector from "./components/SupportModeSelector";
 import TaskInput from "./components/TaskInput";
 import ResultCard from "./components/ResultCard";
 import FocusTimer from "./components/FocusTimer";
+
+const TAB_COPY = {
+  breakdown: {
+    title: "Break down a task",
+    description: "Turn one overwhelming task into a smaller, usable plan.",
+    cta: "Generate Task Plan",
+  },
+  simplify: {
+    title: "Simplify text",
+    description: "Rewrite dense writing into something easier to read and act on.",
+    cta: "Simplify Content",
+  },
+};
 
 export default function App() {
   const [supportMode, setSupportMode] = useState("general");
@@ -16,6 +29,11 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkMode);
+  }, [darkMode]);
 
   const addToHistory = (type, input, output) => {
     const entry = {
@@ -65,194 +83,227 @@ export default function App() {
     }
   };
 
+  const handleRestoreSession = (item) => {
+    setInputText(item.input);
+    setSupportMode(item.supportMode);
+    setError("");
+
+    if (item.type === "Task Breakdown") {
+      setActiveTab("breakdown");
+      setBreakdownResult(item.output);
+      setSimplifyResult(null);
+      setFocusStep(item.output.next_step);
+      return;
+    }
+
+    setActiveTab("simplify");
+    setSimplifyResult(item.output);
+    setBreakdownResult(null);
+  };
+
+  const resetWorkspace = () => {
+    setInputText("");
+    setBreakdownResult(null);
+    setSimplifyResult(null);
+    setFocusStep("");
+    setError("");
+  };
+
+  const panelCopy = TAB_COPY[activeTab];
+
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-10">
-      <div className="mx-auto max-w-7xl">
-        <Header />
+    <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl">
+        <Header darkMode={darkMode} onToggle={() => setDarkMode((value) => !value)} />
 
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <section className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <div className="mb-6 flex gap-3">
-              <button
-                onClick={() => setActiveTab("breakdown")}
-                className={`rounded-xl px-4 py-2 font-medium transition ${
-                  activeTab === "breakdown"
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                Break Down Task
-              </button>
-
-              <button
-                onClick={() => setActiveTab("simplify")}
-                className={`rounded-xl px-4 py-2 font-medium transition ${
-                  activeTab === "simplify"
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                Simplify Text
-              </button>
-            </div>
-
-            <SupportModeSelector value={supportMode} onChange={setSupportMode} />
-            <TaskInput value={inputText} onChange={setInputText} />
-
-            <div className="flex flex-wrap gap-3">
-              <button
-                onClick={handleGenerate}
-                disabled={loading}
-                className="rounded-xl bg-slate-900 px-5 py-3 font-medium text-white disabled:opacity-50"
-              >
-                {loading
-                  ? "Generating..."
-                  : activeTab === "breakdown"
-                  ? "Generate Task Plan"
-                  : "Simplify Content"}
-              </button>
-
-              <button
-                onClick={() => {
-                  setInputText("");
-                  setBreakdownResult(null);
-                  setSimplifyResult(null);
-                  setError("");
-                }}
-                className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-medium text-slate-900"
-              >
-                Clear
-              </button>
-            </div>
-
-            {error && (
-              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
+        <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="panel p-5 sm:p-6">
+            <div className="border-b border-slate-200 pb-5 dark:border-slate-800">
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(TAB_COPY).map(([tabKey, copy]) => (
+                  <button
+                    key={tabKey}
+                    type="button"
+                    onClick={() => setActiveTab(tabKey)}
+                    className={`tab-button ${activeTab === tabKey ? "tab-button-active" : ""}`}
+                  >
+                    {copy.title}
+                  </button>
+                ))}
               </div>
-            )}
-          </section>
 
-          <section>
-            <FocusTimer minutes={15} stepText={focusStep || "Generate a breakdown to start a focus session."} />
-          </section>
-        </div>
+              <h2 className="ui-title mt-5 text-2xl sm:text-3xl">{panelCopy.title}</h2>
+              <p className="ui-subtle mt-2 max-w-2xl text-sm leading-6 sm:text-base">
+                {panelCopy.description}
+              </p>
+            </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <section className="space-y-6">
-            {breakdownResult && (
-              <ResultCard title="Task Breakdown">
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-sm text-slate-500">Goal</p>
-                  <p className="mt-1 font-medium text-slate-900">{breakdownResult.goal}</p>
+            <div className="mt-6 space-y-6">
+              <SupportModeSelector value={supportMode} onChange={setSupportMode} />
+              <TaskInput value={inputText} onChange={setInputText} activeTab={activeTab} />
+
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={handleGenerate}
+                  disabled={loading}
+                  className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
+                >
+                  {loading ? "Generating..." : panelCopy.cta}
+                </button>
+
+                <button
+                  onClick={resetWorkspace}
+                  className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                >
+                  Clear
+                </button>
+              </div>
+
+              {error ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
+                  {error}
                 </div>
+              ) : null}
+            </div>
+          </div>
 
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-sm text-slate-500">Next Step</p>
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-                    <p className="font-medium text-slate-900">{breakdownResult.next_step}</p>
+          <div className="space-y-6">
+            <FocusTimer
+              minutes={15}
+              stepText={focusStep || "Generate a breakdown to send the next step here."}
+            />
+
+            <aside className="panel p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Recent Sessions</h2>
+                <span className="text-xs text-slate-500 dark:text-slate-400">{history.length}/6</span>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {history.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                    No recent sessions yet.
+                  </div>
+                ) : (
+                  history.map((item) => (
                     <button
-                      onClick={() => setFocusStep(breakdownResult.next_step)}
-                      className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleRestoreSession(item)}
+                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
                     >
-                      Send to Focus
-                    </button>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-sm text-slate-500">Estimated Effort</p>
-                  <p className="mt-1 font-medium text-slate-900">{breakdownResult.estimated_effort}</p>
-                </div>
-
-                <div>
-                  <p className="mb-3 text-sm text-slate-500">Steps</p>
-                  <div className="space-y-3">
-                    {breakdownResult.steps.map((step, index) => (
-                      <div
-                        key={index}
-                        className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4"
-                      >
-                        <div className="flex gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
-                            {index + 1}
-                          </div>
-                          <p className="pt-1 text-slate-800">{step}</p>
-                        </div>
-
-                        <button
-                          onClick={() => setFocusStep(step)}
-                          className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
-                        >
-                          Focus
-                        </button>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-medium text-slate-700 dark:text-slate-200">
+                          {item.type}
+                        </span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">{item.createdAt}</span>
                       </div>
-                    ))}
+                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                        {item.input}
+                      </p>
+                    </button>
+                  ))
+                )}
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section className="mt-6">
+          {breakdownResult ? (
+            <ResultCard title="Task Breakdown">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="result-block">
+                  <p className="result-label">Goal</p>
+                  <p className="result-text">{breakdownResult.goal}</p>
+                </div>
+
+                <div className="result-block">
+                  <p className="result-label">Estimated Effort</p>
+                  <p className="result-text">{breakdownResult.estimated_effort}</p>
+                </div>
+              </div>
+
+              <div className="result-block">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="result-label">Next Step</p>
+                    <p className="result-text">{breakdownResult.next_step}</p>
                   </div>
+                  <button
+                    onClick={() => setFocusStep(breakdownResult.next_step)}
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
+                  >
+                    Send to Focus
+                  </button>
                 </div>
-              </ResultCard>
-            )}
+              </div>
 
-            {simplifyResult && (
-              <ResultCard title="Simplified Output">
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="text-sm text-slate-500">Simplified Text</p>
-                  <p className="mt-2 whitespace-pre-line leading-7 text-slate-800">
-                    {simplifyResult.simplified_text}
-                  </p>
+              <div>
+                <p className="result-label mb-3">Steps</p>
+                <div className="space-y-3">
+                  {breakdownResult.steps.map((step, index) => (
+                    <div
+                      key={index}
+                      className="flex flex-col gap-3 rounded-xl border border-slate-200 px-4 py-4 sm:flex-row sm:items-start sm:justify-between dark:border-slate-800"
+                    >
+                      <div className="flex gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-950">
+                          {index + 1}
+                        </div>
+                        <p className="text-sm leading-7 text-slate-700 dark:text-slate-200">{step}</p>
+                      </div>
+
+                      <button
+                        onClick={() => setFocusStep(step)}
+                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900"
+                      >
+                        Focus
+                      </button>
+                    </div>
+                  ))}
                 </div>
+              </div>
+            </ResultCard>
+          ) : simplifyResult ? (
+            <ResultCard title="Simplified Output">
+              <div className="result-block">
+                <p className="result-label">Simplified Text</p>
+                <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-700 dark:text-slate-200">
+                  {simplifyResult.simplified_text}
+                </p>
+              </div>
 
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="mb-3 text-sm text-slate-500">Key Points</p>
-                  <ul className="list-disc space-y-2 pl-6 text-slate-800">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="result-block">
+                  <p className="result-label">Key Points</p>
+                  <ul className="mt-3 space-y-2 text-sm leading-7 text-slate-700 dark:text-slate-200">
                     {simplifyResult.key_points.map((point, index) => (
                       <li key={index}>{point}</li>
                     ))}
                   </ul>
                 </div>
 
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <p className="mb-3 text-sm text-slate-500">Action Items</p>
-                  <ul className="list-disc space-y-2 pl-6 text-slate-800">
+                <div className="result-block">
+                  <p className="result-label">Action Items</p>
+                  <ul className="mt-3 space-y-2 text-sm leading-7 text-slate-700 dark:text-slate-200">
                     {simplifyResult.action_items.map((item, index) => (
                       <li key={index}>{item}</li>
                     ))}
                   </ul>
                 </div>
-              </ResultCard>
-            )}
-          </section>
-
-          <aside className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <h2 className="text-xl font-semibold text-slate-900">Recent Sessions</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Your latest generated support outputs
-            </p>
-
-            <div className="mt-4 space-y-4">
-              {history.length === 0 ? (
-                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-                  No sessions yet. Generate your first result.
-                </div>
-              ) : (
-                history.map((item) => (
-                  <div key={item.id} className="rounded-2xl border border-slate-200 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                        {item.type}
-                      </span>
-                      <span className="text-xs text-slate-500">{item.createdAt}</span>
-                    </div>
-
-                    <p className="mt-3 line-clamp-3 text-sm text-slate-700">{item.input}</p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Mode: {item.supportMode}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </aside>
-        </div>
+              </div>
+            </ResultCard>
+          ) : (
+            <ResultCard title="Results">
+              <div className="result-block">
+                <p className="text-sm leading-7 text-slate-600 dark:text-slate-300">
+                  Generate a task breakdown or simplified text to see the result here.
+                </p>
+              </div>
+            </ResultCard>
+          )}
+        </section>
       </div>
     </main>
   );
