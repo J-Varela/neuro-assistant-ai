@@ -1,20 +1,14 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from app.schemas.breakdown import BreakdownRequest, BreakdownResponse
+from app.services.ai_service import generate_breakdown
 
 router = APIRouter(tags=["Breakdown"])
 
 
 @router.post("/breakdown-task", response_model=BreakdownResponse)
 def breakdown_task(payload: BreakdownRequest):
-    return BreakdownResponse(
-        goal="Finish and submit the task in manageable steps",
-        steps=[
-            "Review what the task is asking",
-            "Gather the materials you need",
-            "Create a simple plan",
-            "Complete the first small part",
-            "Review your progress"
-        ],
-        next_step="Review what the task is asking",
-        estimated_effort="30-60 minutes"
-    )
+    try:
+        result = generate_breakdown(payload.text, payload.support_mode)
+        return BreakdownResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Breakdown generation failed: {str(e)}")

@@ -1,19 +1,14 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from app.schemas.simplify import SimplifyRequest, SimplifyResponse
+from app.services.ai_service import generate_simplified_text
 
 router = APIRouter(tags=["Simplify"])
 
 
 @router.post("/simplify-text", response_model=SimplifyResponse)
 def simplify_text(payload: SimplifyRequest):
-    return SimplifyResponse(
-        simplified_text="This is a simpler version of the original text.",
-        key_points=[
-            "Main idea one",
-            "Main idea two"
-        ],
-        action_items=[
-            "Read the first section",
-            "Complete the first action"
-        ]
-    )
+    try:
+        result = generate_simplified_text(payload.text, payload.support_mode)
+        return SimplifyResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Simplification failed: {str(e)}")
