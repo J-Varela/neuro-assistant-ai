@@ -3,10 +3,16 @@ import { useEffect, useState } from "react";
 const RADIUS = 48;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-export default function FocusTimer({ minutes = 15, stepText }) {
+export default function FocusTimer({ minutes = 25, stepText, supportivePrompt, placeholder }) {
   const initialSeconds = minutes * 60;
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
   const [isRunning, setIsRunning] = useState(false);
+
+  // Reset timer whenever the step or duration changes
+  useEffect(() => {
+    setIsRunning(false);
+    setSecondsLeft(minutes * 60);
+  }, [minutes, stepText]);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -38,8 +44,13 @@ export default function FocusTimer({ minutes = 15, stepText }) {
       </div>
 
       <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-        {stepText || "No step selected yet."}
+        {stepText || placeholder || "No step selected yet."}
       </p>
+      {supportivePrompt ? (
+        <p className="mt-2 text-xs leading-6 italic text-slate-500 dark:text-slate-400">
+          {supportivePrompt}
+        </p>
+      ) : null}
 
       <div className="mt-5 flex flex-col items-center rounded-xl border border-slate-200 px-4 py-5 dark:border-slate-800">
         <div className="relative flex items-center justify-center">
