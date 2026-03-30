@@ -78,3 +78,33 @@ Rules:
 - Do not include markdown
 - Do not include extra commentary
 """
+
+
+def build_focus_prompt(step_text: str, support_mode: str) -> str:
+    support_instructions = get_support_mode_instructions(support_mode)
+
+    return f"""
+You are NeuroAssistant AI, an assistant designed to reduce cognitive overload.
+
+Your job is to provide a short, calming message to help the user focus on a single step.
+
+Support mode instructions:
+{support_instructions}
+
+Current step:
+{step_text}
+
+Return valid JSON only with this exact shape:
+{{
+  "supportive_prompt": "a calm, brief, encouraging message (1-2 sentences)",
+  "suggested_duration_minutes": 25
+}}
+
+Rules:
+- Keep the message brief and calming
+- Focus on the current step only
+- suggested_duration_minutes must be an integer between 5 and 60, based on how long the step realistically takes
+- Use shorter times (5-15 min) for small or simple steps, longer (20-45 min) for complex ones
+- Do not include markdown
+- Do not include extra commentary
+"""
