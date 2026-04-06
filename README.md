@@ -66,6 +66,10 @@ Create a `.env` file in the `backend/` directory:
 AZURE_OPENAI_API_KEY=your_api_key
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_DEPLOYMENT_MODEL=gpt-4.1-mini
+AZURE_OPENAI_API_VERSION=2025-01-01-preview
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/neuro_assistant
+SECRET_KEY=generate-a-random-secret
+ALLOWED_ORIGINS=http://localhost:5173
 ```
 
 Start the API server:
@@ -85,6 +89,43 @@ npm run dev
 ```
 
 The app will be available at `http://localhost:5173`.
+
+## Deploying To Vercel
+
+This repo is now configured so Vercel can host the Vite frontend and the FastAPI backend in the same project:
+
+- Static frontend assets are built from `frontend/`
+- FastAPI is exposed through the Vercel Python entrypoint at `api/index.py`
+- In production, the frontend automatically calls the same-origin API at `/api`
+
+### Vercel setup
+
+1. Import the repository into Vercel with the repository root as the project root.
+2. Add these environment variables in Vercel:
+
+```env
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_DEPLOYMENT_MODEL=gpt-4.1-mini
+AZURE_OPENAI_API_VERSION=2025-01-01-preview
+DATABASE_URL=postgresql+asyncpg://user:password@host:5432/neuro_assistant
+SECRET_KEY=generate-a-long-random-secret
+ALLOWED_ORIGINS=https://your-project.vercel.app
+```
+
+3. Provision a managed PostgreSQL database. A local SQLite file is not suitable for Vercel.
+4. Run the database migrations against that hosted database before the first demo:
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+### Deployment notes
+
+- Preview deployments need access to the same required backend environment variables.
+- If you use a custom domain or separate frontend origin, add it to `ALLOWED_ORIGINS`.
+- The backend still uses Azure OpenAI at runtime, so the live demo depends on that service being reachable and funded.
 
 ## API Endpoints
 

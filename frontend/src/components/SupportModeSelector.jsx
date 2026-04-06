@@ -9,8 +9,8 @@ export default function SupportModeSelector({ value, onChange }) {
   return (
     <div className="mb-6">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <label className="text-sm font-semibold text-[#123c34] dark:text-[#d7f3eb]">Support Mode</label>
-        <span className="text-xs uppercase tracking-[0.22em] text-[#79938c] dark:text-[#7eb7a8]">
+        <label className="text-sm font-semibold text-[var(--text)]">Support Mode</label>
+        <span className="text-xs uppercase tracking-[0.22em] text-[var(--text-muted)]">
           Personalized output
         </span>
       </div>
@@ -20,19 +20,20 @@ export default function SupportModeSelector({ value, onChange }) {
           <button
             key={mode.value}
             type="button"
+            aria-pressed={value === mode.value}
             onClick={() => onChange(mode.value)}
-            className={`rounded-[1.25rem] border p-4 text-left transition-all duration-200 ${
+            className={`rounded-[1rem] border p-4 text-left transition-all duration-200 ${
               value === mode.value
-                ? "border-[#123c34] bg-[#123c34] text-white shadow-[0_16px_40px_rgba(18,60,52,0.18)] dark:border-[#7be0c3] dark:bg-[#7be0c3] dark:text-[#07231e]"
-                : "border-[#123c34]/10 bg-[#f9fcfb] text-[#123c34] hover:-translate-y-0.5 hover:border-[#123c34]/20 hover:bg-white dark:border-white/10 dark:bg-[#0d1c19] dark:text-[#d7f3eb] dark:hover:bg-[#102520]"
+                ? "border-[var(--primary)] bg-[color:color-mix(in_srgb,var(--primary)_15%,var(--surface-strong))] text-[var(--text)] shadow-[0_8px_24px_rgba(44,40,37,0.08)]"
+                : "border-[var(--border)] bg-[color:color-mix(in_srgb,var(--surface-strong)_88%,transparent)] text-[var(--text)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-strong)]"
             }`}
           >
             <span className="block text-sm font-semibold">{mode.label}</span>
             <span
               className={`mt-1 block text-sm leading-6 ${
                 value === mode.value
-                  ? "text-white/85 dark:text-[#07231e]/80"
-                  : "text-[#5e7971] dark:text-[#9dc8bd]"
+                  ? "text-[var(--text-soft)]"
+                  : "text-[var(--text-soft)]"
               }`}
             >
               {mode.detail}

@@ -1,5 +1,18 @@
 fastapi
 uvicorn[standard]
-pydantic
+pydantic[email]
 python-dotenv
 openai
+sqlalchemy[asyncio]
+asyncpg
+alembic
+slowapi
+PyJWT
+bcrypt
+python-multipart
+# test dependencies
+pytest
+pytest-asyncio
+httpx
+aiosqlite
+slowapi

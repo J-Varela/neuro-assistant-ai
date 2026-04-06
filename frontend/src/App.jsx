@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api from "./api/client";
+import { getMe } from "./api/auth";
+import { logout as apiLogout } from "./api/auth";
+import AuthModal from "./components/AuthModal";
 import Header from "./components/Header";
 import SupportModeSelector from "./components/SupportModeSelector";
 import TaskInput from "./components/TaskInput";
@@ -28,37 +31,111 @@ export default function App() {
   const [focusStep, setFocusStep] = useState("");
   const [focusDuration, setFocusDuration] = useState(25);
   const [focusSupportivePrompt, setFocusSupportivePrompt] = useState("");
-  const [history, setHistory] = useState(() => {
-    try {
-      const stored = localStorage.getItem("neuro-history");
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [history, setHistory] = useState([]);
+  const [historyLoadError, setHistoryLoadError] = useState(false);
+  const [deletingHistoryIds, setDeletingHistoryIds] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    try { return localStorage.getItem("neuro-dark-mode") === "true"; } catch { return false; }
+  });
+  const [user, setUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem("neuro-auth-user");
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  });
+  const [showAuth, setShowAuth] = useState(false);
+
+  const clearAuth = useCallback(() => {
+    localStorage.removeItem("neuro-auth-token");
+    localStorage.removeItem("neuro-refresh-token");
+    localStorage.removeItem("neuro-auth-user");
+    setUser(null);
+  }, []);
+
+  const loadHistory = useCallback(() => {
+    return api
+      .get("/history")
+      .then((res) => {
+        setHistory(res.data);
+        setHistoryLoadError(false);
+      })
+      .catch((err) => {
+        if (err.response?.status === 401) {
+          clearAuth();
+          return api
+            .get("/history")
+            .then((res) => {
+              setHistory(res.data);
+              setHistoryLoadError(false);
+            });
+        }
+        setHistoryLoadError(true);
+      });
+  }, [clearAuth]);
+
+  // Validate stored token on load
+  useEffect(() => {
+    const token = localStorage.getItem("neuro-auth-token");
+    if (token) {
+      getMe()
+        .catch(() => {
+          clearAuth();
+        })
+        .finally(() => {
+          loadHistory();
+        });
+      return;
+    }
+    loadHistory();
+  }, []);
+
+  // Sync React state when the token refresh interceptor forces a sign-out
+  useEffect(() => {
+    const handleAuthLogout = () => { clearAuth(); };
+    window.addEventListener("auth:logout", handleAuthLogout);
+    return () => window.removeEventListener("auth:logout", handleAuthLogout);
+  }, [clearAuth]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
+    try { localStorage.setItem("neuro-dark-mode", String(darkMode)); } catch {}
   }, [darkMode]);
 
-  useEffect(() => {
-    localStorage.setItem("neuro-history", JSON.stringify(history));
-  }, [history]);
+  const refreshHistory = () => {
+    loadHistory().catch(() => {});
+  };
 
-  const addToHistory = (type, input, output) => {
-    const entry = {
-      id: Date.now(),
-      type,
-      input,
-      output,
-      supportMode,
-      createdAt: new Date().toLocaleString(),
-    };
+  const handleLogin = (userData, token, refreshToken) => {
+    localStorage.setItem("neuro-auth-token", token);
+    localStorage.setItem("neuro-refresh-token", refreshToken);
+    localStorage.setItem("neuro-auth-user", JSON.stringify(userData));
+    setUser(userData);
+    setShowAuth(false);
+    refreshHistory();
+  };
 
-    setHistory((prev) => [entry, ...prev.slice(0, 5)]);
+  const handleLogout = () => {
+    const refreshToken = localStorage.getItem("neuro-refresh-token");
+    if (refreshToken) {
+      apiLogout(refreshToken).catch(() => {}); // best-effort server-side revocation
+    }
+    clearAuth();
+    refreshHistory();
+  };
+
+  const handleDeleteHistory = (id, e) => {
+    e.stopPropagation();
+    if (deletingHistoryIds.includes(id)) return;
+
+    setDeletingHistoryIds((prev) => [...prev, id]);
+    api.delete(`/history/${id}`)
+      .then(() => setHistory((prev) => prev.filter((item) => item.id !== id)))
+      .catch(() => {})
+      .finally(() => {
+        setDeletingHistoryIds((prev) => prev.filter((itemId) => itemId !== id));
+      });
   };
 
   const handleSendToFocus = (step) => {
@@ -94,7 +171,7 @@ export default function App() {
 
         setBreakdownResult(response.data);
         handleSendToFocus(response.data.next_step);
-        addToHistory("Task Breakdown", inputText, response.data);
+        refreshHistory();
       } else {
         const response = await api.post("/simplify-text", {
           text: inputText,
@@ -102,7 +179,7 @@ export default function App() {
         });
 
         setSimplifyResult(response.data);
-        addToHistory("Text Simplification", inputText, response.data);
+        refreshHistory();
       }
     } catch (err) {
       console.error(err);
@@ -119,15 +196,25 @@ export default function App() {
   };
 
   const handleRestoreSession = (item) => {
-    setInputText(item.input);
-    setSupportMode(item.supportMode);
     setError("");
+    setSupportMode(item.supportMode);
+
+    if (item.type === "Focus Session") {
+      setFocusStep(item.input);
+      setFocusSupportivePrompt(item.output.supportive_prompt || "");
+      setFocusDuration(item.output.duration_minutes || 25);
+      return;
+    }
+
+    setInputText(item.input);
 
     if (item.type === "Task Breakdown") {
       setActiveTab("breakdown");
       setBreakdownResult(item.output);
       setSimplifyResult(null);
-      handleSendToFocus(item.output.next_step);
+      setFocusStep(item.output.next_step);
+      setFocusSupportivePrompt("Focus on just this step. You can do this.");
+      setFocusDuration(25);
       return;
     }
 
@@ -146,65 +233,171 @@ export default function App() {
     setError("");
   };
 
+  const displayedHistory = history.filter((item) => item.type !== "Focus Session");
   const panelCopy = TAB_COPY[activeTab];
 
   return (
-    <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
+    <main className="min-h-screen px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
-        <Header darkMode={darkMode} onToggle={() => setDarkMode((value) => !value)} />
+        <Header
+          darkMode={darkMode}
+          onToggle={() => setDarkMode((value) => !value)}
+          user={user}
+          onShowAuth={() => setShowAuth(true)}
+          onLogout={handleLogout}
+        />
 
-        <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="panel p-5 sm:p-6">
-            <div className="border-b border-slate-200 pb-5 dark:border-slate-800">
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(TAB_COPY).map(([tabKey, copy]) => (
-                  <button
-                    key={tabKey}
-                    type="button"
-                    onClick={() => setActiveTab(tabKey)}
-                    className={`tab-button ${activeTab === tabKey ? "tab-button-active" : ""}`}
-                  >
-                    {copy.title}
-                  </button>
-                ))}
-              </div>
+        {showAuth && (
+          <AuthModal onLogin={handleLogin} onClose={() => setShowAuth(false)} />
+        )}
 
-              <h2 className="ui-title mt-5 text-2xl sm:text-3xl">{panelCopy.title}</h2>
-              <p className="ui-subtle mt-2 max-w-2xl text-sm leading-6 sm:text-base">
-                {panelCopy.description}
-              </p>
-            </div>
-
-            <div className="mt-6 space-y-6">
-              <SupportModeSelector value={supportMode} onChange={setSupportMode} />
-              <TaskInput value={inputText} onChange={setInputText} activeTab={activeTab} />
-
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={handleGenerate}
-                  disabled={loading}
-                  className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
-                >
-                  {loading ? "Generating..." : panelCopy.cta}
-                </button>
-
-                <button
-                  onClick={resetWorkspace}
-                  className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
-                >
-                  Clear
-                </button>
-              </div>
-
-              {error ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200">
-                  {error}
+        <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+          {/* Left column: input panel + results stacked */}
+          <div className="space-y-6">
+            <div className="panel p-5 sm:p-6">
+              <div className="border-b border-[var(--border)] pb-5">
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(TAB_COPY).map(([tabKey, copy]) => (
+                    <button
+                      key={tabKey}
+                      type="button"
+                      onClick={() => setActiveTab(tabKey)}
+                      className={`tab-button ${activeTab === tabKey ? "tab-button-active" : ""}`}
+                    >
+                      {copy.title}
+                    </button>
+                  ))}
                 </div>
-              ) : null}
+
+                <p className="quiet-kicker mt-5">Workspace</p>
+                <h2 className="ui-title mt-2 text-[1.65rem] leading-tight sm:text-[2rem]">{panelCopy.title}</h2>
+                <p className="ui-subtle mt-2 max-w-2xl text-sm leading-6">
+                  {panelCopy.description}
+                </p>
+              </div>
+
+              <div className="mt-6 space-y-6">
+                <SupportModeSelector value={supportMode} onChange={setSupportMode} />
+                <TaskInput value={inputText} onChange={setInputText} activeTab={activeTab} />
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={handleGenerate}
+                    disabled={loading}
+                    className="btn-primary rounded-lg px-5 py-3 text-sm font-medium transition-colors disabled:opacity-50"
+                  >
+                    {loading ? "Generating..." : panelCopy.cta}
+                  </button>
+
+                  <button
+                    onClick={resetWorkspace}
+                    className="btn-secondary rounded-lg px-5 py-3 text-sm font-medium transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                {error ? (
+                  <div className="status-error rounded-xl px-4 py-3 text-sm">
+                    {error}
+                  </div>
+                ) : null}
+              </div>
             </div>
+
+            {breakdownResult ? (
+              <ResultCard title="Task Breakdown">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="result-block">
+                    <p className="result-label">Goal</p>
+                    <p className="result-text">{breakdownResult.goal}</p>
+                  </div>
+
+                  <div className="result-block">
+                    <p className="result-label">Estimated Effort</p>
+                    <p className="result-text">{breakdownResult.estimated_effort}</p>
+                  </div>
+                </div>
+
+                <div className="result-block">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="result-label">Next Step</p>
+                      <p className="result-text">{breakdownResult.next_step}</p>
+                    </div>
+                    <button
+                      onClick={() => handleSendToFocus(breakdownResult.next_step)}
+                      className="btn-secondary rounded-lg px-4 py-2 text-sm font-medium transition-all active:scale-95"
+                    >
+                      Send to Focus
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="result-label mb-3">Steps</p>
+                  <div className="space-y-3">
+                    {breakdownResult.steps.map((step, index) => (
+                      <div
+                        key={index}
+                        className="flex flex-col gap-3 rounded-xl border border-[var(--border)] bg-[color:color-mix(in_srgb,var(--surface-strong)_84%,transparent)] px-4 py-4 sm:flex-row sm:items-start sm:justify-between"
+                      >
+                        <div className="flex gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent-soft)] text-sm font-medium text-[var(--text)]">
+                            {index + 1}
+                          </div>
+                          <p className="text-sm leading-7 text-[var(--text)]">{step}</p>
+                        </div>
+
+                        <button
+                          onClick={() => handleSendToFocus(step)}
+                          className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-all active:scale-95 ${
+                            focusStep === step
+                              ? "btn-primary"
+                              : "btn-secondary"
+                          }`}
+                        >
+                          {focusStep === step ? "Focused" : "Focus"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </ResultCard>
+            ) : simplifyResult ? (
+              <ResultCard title="Simplified Output">
+                <div className="result-block">
+                  <p className="result-label">Simplified Text</p>
+                  <p className="mt-3 whitespace-pre-line text-sm leading-7 text-[var(--text)]">
+                    {simplifyResult.simplified_text}
+                  </p>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="result-block">
+                    <p className="result-label">Key Points</p>
+                    <ul className="mt-3 space-y-2 text-sm leading-7 text-[var(--text)]">
+                      {simplifyResult.key_points.map((point, index) => (
+                        <li key={index}>{point}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="result-block">
+                    <p className="result-label">Action Items</p>
+                    <ul className="mt-3 space-y-2 text-sm leading-7 text-[var(--text)]">
+                      {simplifyResult.action_items.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </ResultCard>
+            ) : null}
           </div>
 
-          <div className="space-y-6">
+          {/* Right column: sticky timer + history */}
+          <div className="space-y-6 self-start sticky top-6">
             <FocusTimer
               minutes={focusDuration}
               stepText={focusStep}
@@ -214,138 +407,62 @@ export default function App() {
 
             <aside className="panel p-5">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Recent Sessions</h2>
-                <span className="text-xs text-slate-500 dark:text-slate-400">{history.length}/6</span>
+                <div>
+                  <p className="quiet-kicker">History</p>
+                  <h2 className="ui-title mt-2 text-lg">Recent Sessions</h2>
+                </div>
+                <span className="text-xs text-[var(--text-muted)]">
+                  {displayedHistory.length} {displayedHistory.length === 1 ? "session" : "sessions"}
+                </span>
               </div>
 
               <div className="mt-4 space-y-3">
-                {history.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                {historyLoadError ? (
+                  <div className="rounded-xl border border-dashed border-[var(--border-strong)] px-4 py-5 text-sm text-[var(--text-soft)]">
+                    Could not load history. Check your connection.
+                  </div>
+                ) : displayedHistory.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-[var(--border)] px-4 py-5 text-sm text-[var(--text-muted)]">
                     No recent sessions yet.
                   </div>
                 ) : (
-                  history.map((item) => (
-                    <button
+                  displayedHistory.map((item) => (
+                    <div
                       key={item.id}
-                      type="button"
-                      onClick={() => handleRestoreSession(item)}
-                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
+                      className="history-card group relative rounded-xl"
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs font-medium text-slate-700 dark:text-slate-200">
-                          {item.type}
-                        </span>
-                        <span className="text-xs text-slate-500 dark:text-slate-400">{item.createdAt}</span>
-                      </div>
-                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                        {item.input}
-                      </p>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreSession(item)}
+                        className="block w-full rounded-xl px-4 py-3 pr-24 text-left transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-medium text-[var(--text)]">
+                            {item.type}
+                          </span>
+                          <span className="shrink-0 text-xs text-[var(--text-muted)]">
+                            {new Date(item.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--text-soft)]">
+                          {item.input}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteHistory(item.id, e)}
+                        className="history-delete absolute right-3 top-3 rounded-full px-2 py-1 text-xs font-medium transition-colors"
+                        aria-label={`Delete ${item.type} history entry`}
+                        disabled={deletingHistoryIds.includes(item.id)}
+                      >
+                        {deletingHistoryIds.includes(item.id) ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
                   ))
                 )}
               </div>
             </aside>
           </div>
-        </section>
-
-        <section className="mt-6">
-          {breakdownResult ? (
-            <ResultCard title="Task Breakdown">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="result-block">
-                  <p className="result-label">Goal</p>
-                  <p className="result-text">{breakdownResult.goal}</p>
-                </div>
-
-                <div className="result-block">
-                  <p className="result-label">Estimated Effort</p>
-                  <p className="result-text">{breakdownResult.estimated_effort}</p>
-                </div>
-              </div>
-
-              <div className="result-block">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="result-label">Next Step</p>
-                    <p className="result-text">{breakdownResult.next_step}</p>
-                  </div>
-                  <button
-                    onClick={() => handleSendToFocus(breakdownResult.next_step)}
-                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-all hover:border-slate-900 hover:bg-slate-900 hover:text-white active:scale-95 dark:border-slate-600 dark:text-slate-200 dark:hover:border-slate-100 dark:hover:bg-slate-100 dark:hover:text-slate-900"
-                  >
-                    Send to Focus
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <p className="result-label mb-3">Steps</p>
-                <div className="space-y-3">
-                  {breakdownResult.steps.map((step, index) => (
-                    <div
-                      key={index}
-                      className="flex flex-col gap-3 rounded-xl border border-slate-200 px-4 py-4 sm:flex-row sm:items-start sm:justify-between dark:border-slate-800"
-                    >
-                      <div className="flex gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-950">
-                          {index + 1}
-                        </div>
-                        <p className="text-sm leading-7 text-slate-700 dark:text-slate-200">{step}</p>
-                      </div>
-
-                      <button
-                        onClick={() => handleSendToFocus(step)}
-                        className={`shrink-0 rounded-lg border px-4 py-2 text-sm font-medium transition-all active:scale-95 ${
-                          focusStep === step
-                            ? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
-                            : "border-slate-300 text-slate-700 hover:border-slate-900 hover:bg-slate-900 hover:text-white dark:border-slate-600 dark:text-slate-200 dark:hover:border-slate-100 dark:hover:bg-slate-100 dark:hover:text-slate-900"
-                        }`}
-                      >
-                        {focusStep === step ? "Focused" : "Focus"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </ResultCard>
-          ) : simplifyResult ? (
-            <ResultCard title="Simplified Output">
-              <div className="result-block">
-                <p className="result-label">Simplified Text</p>
-                <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-700 dark:text-slate-200">
-                  {simplifyResult.simplified_text}
-                </p>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="result-block">
-                  <p className="result-label">Key Points</p>
-                  <ul className="mt-3 space-y-2 text-sm leading-7 text-slate-700 dark:text-slate-200">
-                    {simplifyResult.key_points.map((point, index) => (
-                      <li key={index}>{point}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="result-block">
-                  <p className="result-label">Action Items</p>
-                  <ul className="mt-3 space-y-2 text-sm leading-7 text-slate-700 dark:text-slate-200">
-                    {simplifyResult.action_items.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </ResultCard>
-          ) : (
-            <ResultCard title="Results">
-              <div className="result-block">
-                <p className="text-sm leading-7 text-slate-600 dark:text-slate-300">
-                  Generate a task breakdown or simplified text to see the result here.
-                </p>
-              </div>
-            </ResultCard>
-          )}
         </section>
       </div>
     </main>
